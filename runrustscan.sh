@@ -56,17 +56,60 @@ EOF
 fi
 
 # ========================
-# JALANKAN SCAN
+# PILIH MODE
 # ========================
-read -p "Masukkan IP atau domain target untuk scan: " TARGET
+echo "Pilih mode pemindaian:"
+echo "1) NMAP"
+echo "2) RustScan (default)"
+echo "3) Generate daftar IP dari CIDR (misal 10.16.8.8/16) ke file"
+read -p "Pilihan Anda (1-3): " MODE
 
-DEFAULT_ARGS="-t 6000 -b 1000 -- -sCV -Pn -v"
-read -p "Masukkan argumen tambahan (ENTER untuk default: $DEFAULT_ARGS): " EXTRA_ARGS
+if [ "$MODE" == "1" ]; then
+    read -p "Masukkan IP atau domain target untuk scan: " TARGET
+    DEFAULT_NMAP_ARGS="-g53 --max-retries=1 -Pn -p- --disable-arp-ping -n -v"
+    read -p "Masukkan argumen tambahan untuk Nmap (ENTER untuk default: $DEFAULT_NMAP_ARGS): " EXTRA_ARGS
 
-if [ -z "$EXTRA_ARGS" ]; then
-    EXTRA_ARGS="$DEFAULT_ARGS"
+    if [ -z "$EXTRA_ARGS" ]; then
+        EXTRA_ARGS="$DEFAULT_NMAP_ARGS"
+    fi
+
+    echo "[+] Menjalankan NMAP untuk target: $TARGET"
+    docker run --rm -it --entrypoint nmap "$IMAGE_NAME" $EXTRA_ARGS "$TARGET"
+    exit 0
 fi
 
-echo "[+] Menjalankan RustScan untuk target: $TARGET"
-docker run --rm -it "$IMAGE_NAME" -a "$TARGET" $EXTRA_ARGS
+if [ "$MODE" == "2" ] || [ -z "$MODE" ]; then
+    read -p "Masukkan IP atau domain target untuk scan: " TARGET
+    DEFAULT_RUSTSCAN_ARGS="-t 6000 -b 1000 -- -sCV -Pn -v"
+    read -p "Masukkan argumen tambahan untuk RustScan (ENTER untuk default: $DEFAULT_RUSTSCAN_ARGS): " EXTRA_ARGS
 
+    if [ -z "$EXTRA_ARGS" ]; then
+        EXTRA_ARGS="$DEFAULT_RUSTSCAN_ARGS"
+    fi
+
+    echo "[+] Menjalankan RustScan untuk target: $TARGET"
+    docker run --rm -it "$IMAGE_NAME" -a "$TARGET" $EXTRA_ARGS
+    exit 0
+fi
+
+if [ "$MODE" == "3" ]; then
+    read -p "Masukkan IP atau domain target untuk scan: " TARGET
+    read -p "Masukkan subnet (misal /16): " CIDR_INPUT
+    
+    CIDR_RANGE="${TARGET}${CIDR_INPUT}"
+    OUTPUT_FILE="${CIDR_RANGE}.txt"
+    SAFE_OUTPUT_FILE="${OUTPUT_FILE//\//_}"  # Ganti '/' agar valid di nama file
+    
+    echo "[+] Cek IP aktif di $CIDR_RANGE (ini bisa makan waktu tergantung subnet)..."
+    
+    docker run --rm -i --entrypoint nmap "$IMAGE_NAME" -sL -n "$CIDR_RANGE" | \
+    awk '/Nmap scan report for/ {print $NF}' | tee "$SAFE_OUTPUT_FILE"
+
+
+
+
+
+    echo "[✓] IP aktif disimpan ke: $SAFE_OUTPUT_FILE"
+
+    exit 0
+fi
